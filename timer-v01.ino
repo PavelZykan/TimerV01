@@ -52,9 +52,13 @@ Button left(OneShot);
 Button right(OneShot);
 Button up(OneShot);
 Button down(OneShot);
-Button start(OneShot);
 
 void setup() {
+  secondsConstant = new char[3];
+  secondsConstant[0] = ' ';
+  secondsConstant[1] = 's';
+  secondsConstant[2] = 0;
+  
   lcd.init(); //initialize the lcd
   lcd.backlight(); //open the backlight 
 
@@ -65,8 +69,6 @@ void setup() {
   setupButtons();
 
   setupSettings();
-
-  startPressed = 0L;
 }
 
 void setupSettings() {
@@ -90,8 +92,15 @@ void setupMenu() {
   menu.init();
 
   menu.add_screen(welcome_screen);
+  menu.add_screen(startStopScreen);
   menu.add_screen(timerDelayMinScreen);
   menu.add_screen(timerDelayMaxScreen);
+
+  welcome_line1.attach_function(1, startBuzzer);
+  welcome_line1.attach_function(2, startCountdown);
+
+  startStopLine1.attach_function(1, startStopModeDown);
+  startStopLine1.attach_function(2, startStopModeUp);
 
   timerDelayMinLine1.attach_function(1, decMinDelay);
   timerDelayMinLine1.attach_function(2, incMinDelay);
@@ -100,6 +109,12 @@ void setupMenu() {
   timerDelayMaxLine1.attach_function(2, incMaxDelay);
 
    menu.update();
+}
+
+void startCountdown() {
+  countdownRunning = true;
+  countdownStart = millis();
+  buzzerDelay = random(currentSettings.timerDelayMin * 1000, currentSettings.timerDelayMax * 1000);
 }
 
 void incMinDelay() {
@@ -134,10 +149,46 @@ void decMaxDelay() {
   }
 }
 
+void startStopModeUp() {
+  if (!startStopModeRunning) {
+    startStopModeRunning = true;
+    elapsedTime = 0.0f;
+    startCountdown();
+  } else {
+    startStopModeRunning = false;
+    menu.update();
+  }
+}
+
+void startStopModeDown() {
+  if (!startStopModeRunning) {
+    elapsedTime = 0.0f;
+    startBuzzer();
+    startStopModeRunning = true;
+  } else {
+    startStopModeRunning = false;
+    menu.update();
+  }
+}
+
+void startBuzzer() {
+  buzzerRunning = true;
+  buzzerStarted = millis();
+  tone(buzzerPin, 1000);
+}
+
+void checkBuzzerStop() {
+  if (millis() - buzzerStarted > buzzerToneLength) {
+    stopBuzzer();
+  }
+}
+
+void stopBuzzer() {
+  buzzerRunning = false;
+  noTone(buzzerPin);
+}
+
 void setupButtons() {
-  start.assign(6);
-  start.turnOnPullUp();
-  start.check();
   left.assign(7);
   left.turnOnPullUp();
   left.check();
@@ -162,16 +213,25 @@ void loop() {
     menu.call_function(0, 2);
   } else if (down.check()) {
     menu.call_function(0, 1);
-  } else if (start.check()) {
-    startPressed = millis();
-    buzzerDelay = random(currentSettings.timerDelayMin * 1000, currentSettings.timerDelayMax * 1000);
-  } else if (startPressed > 0) {
-    unsigned long timeDiff = millis() - startPressed;
+  } 
+
+  if (countdownRunning) {
+    unsigned long timeDiff = millis() - countdownStart;
     if (timeDiff >= buzzerDelay) {
-      startPressed = 0L;
-      tone(buzzerPin, 1000); 
-      delay(1000);
-      noTone(buzzerPin);
+      countdownRunning = false;
+      startBuzzer();      
+    }
+  }
+  
+  if (buzzerRunning) {
+    checkBuzzerStop();
+  }
+  
+  if (startStopModeRunning && !countdownRunning) {
+    elapsedTime = (millis() - buzzerStarted) / 1000.0f;
+    if (millis() - lastElapsedTimeMenuUpdate > elapsedTimeMenuUpdateDelay){
+      menu.update();
+      lastElapsedTimeMenuUpdate = millis();
     }
   }
 }
